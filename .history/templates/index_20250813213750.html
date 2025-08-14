@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    To-Do Pro — Flask API + UI
+    - Attractive Tailwind UI
+    - Add, Edit, Delete tasks
+    - Toggle Completed status (checkbox -> PUT /tasks/:id { completed })
+    - JSON persistence via backend
+  -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>To-Do Pro — Flask API + UI</title>
+
+  <!-- Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="data:,"/>
+
+  <style>
+    :root{
+      --bg:#0f172a;        /* slate-900 */
+      --card:#111827;      /* gray-900  */
+      --muted:#94a3b8;     /* slate-400 */
+      --brand:#8b5cf6;     /* violet-500*/
+      --brand-2:#22d3ee;   /* cyan-400   */
+      --ok:#10b981;        /* emerald-500 */
+      --danger:#ef4444;    /* red-500 */
+      --amber:#f59e0b;     /* amber-500 */
+    }
+    html,body{
+      height:100%;
+      background:
+        radial-gradient(1000px 600px at 10% 10%, rgba(139,92,246,.15), transparent 40%),
+        radial-gradient(800px 500px at 90% 10%, rgba(34,211,238,.12), transparent 40%),
+        var(--bg);
+      color:white;
+      font-family:"Poppins",system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;
+    }
+    .glass{background: rgba(17,24,39,.7); backdrop-filter: blur(10px); border:1px solid rgba(255,255,255,.06);}
+    .btn{transition: transform .06s ease, box-shadow .2s ease;}
+    .btn:active{transform: translateY(1px) scale(.99);}
+    .gradient-text{background: linear-gradient(90deg, var(--brand), var(--brand-2)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    .shadow-soft{box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);}
+    .chip{background: rgba(255,255,255,.06); padding:.25rem .5rem; border-radius:999px; font-size:.75rem; color:var(--muted);}
+    .task-card{border:1px solid rgba(255,255,255,.06);}
+    .strike{ text-decoration: line-through; opacity:.6;}
+    .tag-ok{background: rgba(16,185,129,.12); color:#a7f3d0; border:1px solid rgba(16,185,129,.35); }
+    .tag-due{background: rgba(245,158,11,.12); color:#fde68a; border:1px solid rgba(245,158,11,.35); }
+    .tag-id{background: rgba(255,255,255,.06); color:#cbd5e1; border:1px solid rgba(148,163,184,.25); }
+    .card-done{ background: linear-gradient(0deg, rgba(16,185,129,.07), rgba(16,185,129,0) 40%); }
+    .toast{position:fixed; right:1rem; bottom:1rem; z-index:50; display:none}
+    .toast.show{display:block; animation: fadein .2s ease-out}
+    @keyframes fadein{from{opacity:0; transform: translateY(6px)} to{opacity:1; transform: translateY(0)}}
+  </style>
+</head>
+<body>
+  <div class="min-h-screen">
+    <!-- Header -->
+    <header class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
+      <div class="flex items-center justify-between">
+        <h1 class="text-3xl sm:text-4xl font-bold gradient-text">To-Do Pro</h1>
+        <div class="flex items-center gap-2">
+          <span class="chip hidden sm:inline">Flask REST API</span>
+          <span class="chip hidden sm:inline">JSON Persistence</span>
+          <span class="chip">Local-first</span>
+        </div>
+      </div>
+      <p class="text-sm text-slate-300 mt-2">A sleek to-do app powered by a clean Flask API. Add tasks, set due dates, mark complete—your data survives restarts via <span class="font-semibold">tasks.json</span>.</p>
+    </header>
+
+    <!-- Add Task -->
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+      <section class="glass shadow-soft rounded-2xl p-5">
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input id="title" type="text" placeholder="Task title..." class="flex-1 px-4 py-3 rounded-xl bg-black/30 border border-white/10 outline-none focus:border-white/30" />
+          <input id="dueDate" type="date" class="px-4 py-3 rounded-xl bg-black/30 border border-white/10 outline-none focus:border-white/30"/>
+          <button id="addBtn" class="btn px-5 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 shadow-soft font-semibold">Add Task</button>
+        </div>
+        <p class="text-xs text-slate-400 mt-2">Tip: Press <kbd class="chip">Enter</kbd> while typing to add quickly.</p>
+      </section>
+
+      <!-- Filters / Stats (optional enhancements kept simple) -->
+      <section class="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-300">
+        <span class="chip">All Tasks</span>
+        <span class="chip" id="countTotal">0 total</span>
+        <span class="chip" id="countOpen">0 open</span>
+        <span class="chip" id="countDone">0 done</span>
+      </section>
+
+      <!-- Task List -->
+      <section class="mt-6 grid gap-3" id="taskList"></section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-slate-400 text-sm">
+      Built with ❤️ using Flask. API base: <span class="chip">/tasks</span>.
+    </footer>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast glass rounded-xl px-4 py-3 text-sm text-slate-200 shadow-soft"></div>
+
+  <script>
+    // =========================
+    // Config & Elements
+    // =========================
+    const API_BASE = ""; // same origin
+    const listEl   = document.getElementById("taskList");
+    const inputEl  = document.getElementById("title");
+    const dateEl   = document.getElementById("dueDate");
+    const addBtn   = document.getElementById("addBtn");
+    const toastEl  = document.getElementById("toast");
+    const countTotal = document.getElementById("countTotal");
+    const countOpen  = document.getElementById("countOpen");
+    const countDone  = document.getElementById("countDone");
+
+    // =========================
+    // Helpers
+    // =========================
+    function showToast(msg){
+      toastEl.textContent = msg;
+      toastEl.className = "toast glass rounded-xl px-4 py-3 text-sm text-slate-200 shadow-soft show";
+      setTimeout(()=> toastEl.className = "toast glass rounded-xl px-4 py-3 text-sm text-slate-200 shadow-soft", 1600);
+    }
+
+    function fmtDate(d){
+      if(!d) return "";
+      try {
+        const date = new Date(d);
+        // Keep YYYY-MM-DD if it's already that; else show locale
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+        return date.toLocaleDateString();
+      } catch(e){ return d; }
+    }
+
+    function stats(tasks){
+      const total = tasks.length;
+      const done  = tasks.filter(t => t.completed).length;
+      const open  = total - done;
+      countTotal.textContent = `${total} total`;
+      countOpen.textContent  = `${open} open`;
+      countDone.textContent  = `${done} done`;
+    }
+
+    // =========================
+    // API calls
+    // =========================
+    async function fetchTasks(){
+      const res = await fetch(`${API_BASE}/tasks`);
+      if(!res.ok){ listEl.innerHTML = `<div class="text-red-300">Failed to load tasks.</div>`; return; }
+      const data = await res.json();
+      renderTasks(data);
+      stats(data);
+    }
+
+    async function createTask(title, due_date){
+      const res = await fetch(`${API_BASE}/tasks`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ title, due_date })
+      });
+      if(!res.ok){
+        const err = await safeJson(res);
+        throw new Error(err?.message || "Failed to add task");
+      }
+      return res.json();
+    }
+
+    async function updateTask(id, body){
+      const res = await fetch(`${API_BASE}/tasks/${id}`, {
+        method: "PUT",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(body)
+      });
+      if(!res.ok){
+        const err = await safeJson(res);
+        throw new Error(err?.message || "Failed to update task");
+      }
+      return res.json();
+    }
+
+    async function deleteTask(id){
+      const res = await fetch(`${API_BASE}/tasks/${id}`, { method: "DELETE" });
+      if(res.status !== 204){
+        const err = await safeJson(res);
+        throw new Error(err?.message || "Failed to delete");
+      }
+    }
+
+    async function safeJson(res){
+      try{ return await res.json(); } catch{ return null; }
+    }
+
+    // =========================
+    // Render
+    // =========================
+    function pill(text, cls=""){
+      return `<span class="chip ${cls}">${text}</span>`;
+    }
+
+    function taskCard(t){
+      const done = t.completed;
+      const strikeCls = done ? "strike" : "";
+      const cardDone  = done ? "card-done" : "";
+      const due = t.due_date ? pill(`Due: ${fmtDate(t.due_date)}`, "tag-due") : "";
+      const statusPill = done ? pill("Completed", "tag-ok") : "";
+      return `
+        <div class="glass task-card ${cardDone} rounded-xl p-4 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <input type="checkbox" ${done ? "checked" : ""} class="size-5 rounded accent-emerald-500"
+                   data-id="${t.id}" data-role="toggle" aria-label="Toggle complete"/>
+            <div>
+              <div class="font-semibold ${strikeCls}">${escapeHtml(t.title)}</div>
+              <div class="text-xs text-slate-400 flex flex-wrap gap-2 mt-1 items-center">
+                ${due}
+                ${statusPill}
+                ${pill("#"+t.id, "tag-id")}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="btn px-3 py-2 rounded-lg bg-cyan-500/90 hover:bg-cyan-400/90"
+                    data-role="edit" data-id="${t.id}">Edit</button>
+            <button class="btn px-3 py-2 rounded-lg bg-red-500/90 hover:bg-red-400/90"
+                    data-role="delete" data-id="${t.id}">Delete</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTasks(tasks){
+      if(!tasks.length){
+        listEl.innerHTML = `<div class="text-slate-400 text-center py-10">No tasks yet. Add your first task above!</div>`;
+        return;
+      }
+      listEl.innerHTML = tasks.map(taskCard).join("");
+    }
+
+    // Escape for safety (basic)
+    function escapeHtml(s){
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // =========================
+    // UI Handlers
+    // =========================
+    async function onAdd(){
+      const title = inputEl.value.trim();
+      if(!title){ showToast("Enter a task title"); return; }
+      const due_date = dateEl.value || null;
+      try{
+        await createTask(title, due_date);
+        inputEl.value = "";
+        dateEl.value  = "";
+        showToast("Task added");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    // Old function name (from your sample) kept for compatibility:
+    async function toggleCompleted(id, value){
+      return toggleStatus(id, value);
+    }
+
+    // New canonical toggle function (PUT /tasks/:id { completed })
+    async function toggleStatus(id, isChecked){
+      try{
+        await updateTask(id, { completed: !!isChecked });
+        showToast(isChecked ? "Marked completed" : "Marked pending");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    async function onEdit(id){
+      try{
+        // Fetch current to prefill prompts
+        const res = await fetch(`${API_BASE}/tasks/${id}`);
+        if(!res.ok){ showToast("Failed to load task"); return; }
+        const task = await res.json();
+
+        const newTitle = prompt("Edit title:", task.title ?? "");
+        if(newTitle === null) return;
+
+        const newDue = prompt("Edit due date (YYYY-MM-DD) or blank to clear:", task.due_date ?? "");
+        const body = { title: newTitle.trim() };
+        if(newDue !== null) body.due_date = (newDue.trim() || null);
+
+        await updateTask(id, body);
+        showToast("Task updated");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    async function onDelete(id){
+      if(!confirm("Delete this task?")) return;
+      try{
+        await deleteTask(id);
+        showToast("Task deleted");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    // =========================
+    // Wire up events
+    // =========================
+    addBtn.addEventListener("click", onAdd);
+    inputEl.addEventListener("keydown", (e)=>{ if(e.key === "Enter") onAdd(); });
+
+    // Delegated clicks (Edit/Delete)
+    listEl.addEventListener("click", (e)=>{
+      const t = e.target;
+      const role = t.getAttribute("data-role");
+      const id = t.getAttribute("data-id");
+      if(!role || !id) return;
+      if(role === "delete") onDelete(id);
+      if(role === "edit") onEdit(id);
+    });
+
+    // Delegated change (Toggle checkbox)
+    listEl.addEventListener("change", (e)=>{
+      const t = e.target;
+      if(t.getAttribute("data-role") === "toggle"){
+        const id = t.getAttribute("data-id");
+        toggleStatus(id, t.checked);
+      }
+    });
+
+    // Initial load
+    fetchTasks();
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    To-Do Pro — Flask API + UI
+    - Attractive Tailwind UI
+    - Add, Edit, Delete tasks
+    - Toggle Completed status (checkbox -> PUT /tasks/:id { completed })
+    - JSON persistence via backend
+  -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>To-Do Pro — Flask API + UI</title>
+
+  <!-- Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="data:,"/>
+
+  <style>
+    :root{
+      --bg:#0f172a;        /* slate-900 */
+      --card:#111827;      /* gray-900  */
+      --muted:#94a3b8;     /* slate-400 */
+      --brand:#8b5cf6;     /* violet-500*/
+      --brand-2:#22d3ee;   /* cyan-400   */
+      --ok:#10b981;        /* emerald-500 */
+      --danger:#ef4444;    /* red-500 */
+      --amber:#f59e0b;     /* amber-500 */
+    }
+    html,body{
+      height:100%;
+      background:
+        radial-gradient(1000px 600px at 10% 10%, rgba(139,92,246,.15), transparent 40%),
+        radial-gradient(800px 500px at 90% 10%, rgba(34,211,238,.12), transparent 40%),
+        var(--bg);
+      color:white;
+      font-family:"Poppins",system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;
+    }
+    .glass{background: rgba(17,24,39,.7); backdrop-filter: blur(10px); border:1px solid rgba(255,255,255,.06);}
+    .btn{transition: transform .06s ease, box-shadow .2s ease;}
+    .btn:active{transform: translateY(1px) scale(.99);}
+    .gradient-text{background: linear-gradient(90deg, var(--brand), var(--brand-2)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    .shadow-soft{box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);}
+    .chip{background: rgba(255,255,255,.06); padding:.25rem .5rem; border-radius:999px; font-size:.75rem; color:var(--muted);}
+    .task-card{border:1px solid rgba(255,255,255,.06);}
+    .strike{ text-decoration: line-through; opacity:.6;}
+    .tag-ok{background: rgba(16,185,129,.12); color:#a7f3d0; border:1px solid rgba(16,185,129,.35); }
+    .tag-due{background: rgba(245,158,11,.12); color:#fde68a; border:1px solid rgba(245,158,11,.35); }
+    .tag-id{background: rgba(255,255,255,.06); color:#cbd5e1; border:1px solid rgba(148,163,184,.25); }
+    .card-done{ background: linear-gradient(0deg, rgba(16,185,129,.07), rgba(16,185,129,0) 40%); }
+    .toast{position:fixed; right:1rem; bottom:1rem; z-index:50; display:none}
+    .toast.show{display:block; animation: fadein .2s ease-out}
+    @keyframes fadein{from{opacity:0; transform: translateY(6px)} to{opacity:1; transform: translateY(0)}}
+  </style>
+</head>
+<body>
+  <div class="min-h-screen">
+    <!-- Header -->
+    <header class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
+      <div class="flex items-center justify-between">
+        <h1 class="text-3xl sm:text-4xl font-bold gradient-text">To-Do Pro</h1>
+        <div class="flex items-center gap-2">
+          <span class="chip hidden sm:inline">Flask REST API</span>
+          <span class="chip hidden sm:inline">JSON Persistence</span>
+          <span class="chip">Local-first</span>
+        </div>
+      </div>
+      <p class="text-sm text-slate-300 mt-2">A sleek to-do app powered by a clean Flask API. Add tasks, set due dates, mark complete—your data survives restarts via <span class="font-semibold">tasks.json</span>.</p>
+    </header>
+
+    <!-- Add Task -->
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+      <section class="glass shadow-soft rounded-2xl p-5">
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input id="title" type="text" placeholder="Task title..." class="flex-1 px-4 py-3 rounded-xl bg-black/30 border border-white/10 outline-none focus:border-white/30" />
+          <input id="dueDate" type="date" class="px-4 py-3 rounded-xl bg-black/30 border border-white/10 outline-none focus:border-white/30"/>
+          <button id="addBtn" class="btn px-5 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 shadow-soft font-semibold">Add Task</button>
+        </div>
+        <p class="text-xs text-slate-400 mt-2">Tip: Press <kbd class="chip">Enter</kbd> while typing to add quickly.</p>
+      </section>
+
+      <!-- Filters / Stats (optional enhancements kept simple) -->
+      <section class="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-300">
+        <span class="chip">All Tasks</span>
+        <span class="chip" id="countTotal">0 total</span>
+        <span class="chip" id="countOpen">0 open</span>
+        <span class="chip" id="countDone">0 done</span>
+      </section>
+
+      <!-- Task List -->
+      <section class="mt-6 grid gap-3" id="taskList"></section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-slate-400 text-sm">
+      Built with ❤️ using Flask. API base: <span class="chip">/tasks</span>.
+    </footer>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast glass rounded-xl px-4 py-3 text-sm text-slate-200 shadow-soft"></div>
+
+  <script>
+    // =========================
+    // Config & Elements
+    // =========================
+    const API_BASE = ""; // same origin
+    const listEl   = document.getElementById("taskList");
+    const inputEl  = document.getElementById("title");
+    const dateEl   = document.getElementById("dueDate");
+    const addBtn   = document.getElementById("addBtn");
+    const toastEl  = document.getElementById("toast");
+    const countTotal = document.getElementById("countTotal");
+    const countOpen  = document.getElementById("countOpen");
+    const countDone  = document.getElementById("countDone");
+
+    // =========================
+    // Helpers
+    // =========================
+    function showToast(msg){
+      toastEl.textContent = msg;
+      toastEl.className = "toast glass rounded-xl px-4 py-3 text-sm text-slate-200 shadow-soft show";
+      setTimeout(()=> toastEl.className = "toast glass rounded-xl px-4 py-3 text-sm text-slate-200 shadow-soft", 1600);
+    }
+
+    function fmtDate(d){
+      if(!d) return "";
+      try {
+        const date = new Date(d);
+        // Keep YYYY-MM-DD if it's already that; else show locale
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+        return date.toLocaleDateString();
+      } catch(e){ return d; }
+    }
+
+    function stats(tasks){
+      const total = tasks.length;
+      const done  = tasks.filter(t => t.completed).length;
+      const open  = total - done;
+      countTotal.textContent = `${total} total`;
+      countOpen.textContent  = `${open} open`;
+      countDone.textContent  = `${done} done`;
+    }
+
+    // =========================
+    // API calls
+    // =========================
+    async function fetchTasks(){
+      const res = await fetch(`${API_BASE}/tasks`);
+      if(!res.ok){ listEl.innerHTML = `<div class="text-red-300">Failed to load tasks.</div>`; return; }
+      const data = await res.json();
+      renderTasks(data);
+      stats(data);
+    }
+
+    async function createTask(title, due_date){
+      const res = await fetch(`${API_BASE}/tasks`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ title, due_date })
+      });
+      if(!res.ok){
+        const err = await safeJson(res);
+        throw new Error(err?.message || "Failed to add task");
+      }
+      return res.json();
+    }
+
+    async function updateTask(id, body){
+      const res = await fetch(`${API_BASE}/tasks/${id}`, {
+        method: "PUT",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(body)
+      });
+      if(!res.ok){
+        const err = await safeJson(res);
+        throw new Error(err?.message || "Failed to update task");
+      }
+      return res.json();
+    }
+
+    async function deleteTask(id){
+      const res = await fetch(`${API_BASE}/tasks/${id}`, { method: "DELETE" });
+      if(res.status !== 204){
+        const err = await safeJson(res);
+        throw new Error(err?.message || "Failed to delete");
+      }
+    }
+
+    async function safeJson(res){
+      try{ return await res.json(); } catch{ return null; }
+    }
+
+    // =========================
+    // Render
+    // =========================
+    function pill(text, cls=""){
+      return `<span class="chip ${cls}">${text}</span>`;
+    }
+
+    function taskCard(t){
+      const done = t.completed;
+      const strikeCls = done ? "strike" : "";
+      const cardDone  = done ? "card-done" : "";
+      const due = t.due_date ? pill(`Due: ${fmtDate(t.due_date)}`, "tag-due") : "";
+      const statusPill = done ? pill("Completed", "tag-ok") : "";
+      return `
+        <div class="glass task-card ${cardDone} rounded-xl p-4 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <input type="checkbox" ${done ? "checked" : ""} class="size-5 rounded accent-emerald-500"
+                   data-id="${t.id}" data-role="toggle" aria-label="Toggle complete"/>
+            <div>
+              <div class="font-semibold ${strikeCls}">${escapeHtml(t.title)}</div>
+              <div class="text-xs text-slate-400 flex flex-wrap gap-2 mt-1 items-center">
+                ${due}
+                ${statusPill}
+                ${pill("#"+t.id, "tag-id")}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="btn px-3 py-2 rounded-lg bg-cyan-500/90 hover:bg-cyan-400/90"
+                    data-role="edit" data-id="${t.id}">Edit</button>
+            <button class="btn px-3 py-2 rounded-lg bg-red-500/90 hover:bg-red-400/90"
+                    data-role="delete" data-id="${t.id}">Delete</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTasks(tasks){
+      if(!tasks.length){
+        listEl.innerHTML = `<div class="text-slate-400 text-center py-10">No tasks yet. Add your first task above!</div>`;
+        return;
+      }
+      listEl.innerHTML = tasks.map(taskCard).join("");
+    }
+
+    // Escape for safety (basic)
+    function escapeHtml(s){
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // =========================
+    // UI Handlers
+    // =========================
+    async function onAdd(){
+      const title = inputEl.value.trim();
+      if(!title){ showToast("Enter a task title"); return; }
+      const due_date = dateEl.value || null;
+      try{
+        await createTask(title, due_date);
+        inputEl.value = "";
+        dateEl.value  = "";
+        showToast("Task added");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    // Old function name (from your sample) kept for compatibility:
+    async function toggleCompleted(id, value){
+      return toggleStatus(id, value);
+    }
+
+    // New canonical toggle function (PUT /tasks/:id { completed })
+    async function toggleStatus(id, isChecked){
+      try{
+        await updateTask(id, { completed: !!isChecked });
+        showToast(isChecked ? "Marked completed" : "Marked pending");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    async function onEdit(id){
+      try{
+        // Fetch current to prefill prompts
+        const res = await fetch(`${API_BASE}/tasks/${id}`);
+        if(!res.ok){ showToast("Failed to load task"); return; }
+        const task = await res.json();
+
+        const newTitle = prompt("Edit title:", task.title ?? "");
+        if(newTitle === null) return;
+
+        const newDue = prompt("Edit due date (YYYY-MM-DD) or blank to clear:", task.due_date ?? "");
+        const body = { title: newTitle.trim() };
+        if(newDue !== null) body.due_date = (newDue.trim() || null);
+
+        await updateTask(id, body);
+        showToast("Task updated");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    async function onDelete(id){
+      if(!confirm("Delete this task?")) return;
+      try{
+        await deleteTask(id);
+        showToast("Task deleted");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    // =========================
+    // Wire up events
+    // =========================
+    addBtn.addEventListener("click", onAdd);
+    inputEl.addEventListener("keydown", (e)=>{ if(e.key === "Enter") onAdd(); });
+
+    // Delegated clicks (Edit/Delete)
+    listEl.addEventListener("click", (e)=>{
+      const t = e.target;
+      const role = t.getAttribute("data-role");
+      const id = t.getAttribute("data-id");
+      if(!role || !id) return;
+      if(role === "delete") onDelete(id);
+      if(role === "edit") onEdit(id);
+    });
+
+    // Delegated change (Toggle checkbox)
+    listEl.addEventListener("change", (e)=>{
+      const t = e.target;
+      if(t.getAttribute("data-role") === "toggle"){
+        const id = t.getAttribute("data-id");
+        toggleStatus(id, t.checked);
+      }
+    });
+
+    // Initial load
+    fetchTasks();
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    To-Do Pro — Flask API + UI
+    - Attractive Tailwind UI
+    - Add, Edit, Delete tasks
+    - Toggle Completed status (checkbox -> PUT /tasks/:id { completed })
+    - JSON persistence via backend
+  -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>To-Do Pro — Flask API + UI</title>
+
+  <!-- Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="data:,"/>
+
+  <style>
+    :root{
+      --bg:#0f172a;        /* slate-900 */
+      --card:#111827;      /* gray-900  */
+      --muted:#94a3b8;     /* slate-400 */
+      --brand:#8b5cf6;     /* violet-500*/
+      --brand-2:#22d3ee;   /* cyan-400   */
+      --ok:#10b981;        /* emerald-500 */
+      --danger:#ef4444;    /* red-500 */
+      --amber:#f59e0b;     /* amber-500 */
+    }
+    html,body{
+      height:100%;
+      background:
+        radial-gradient(1000px 600px at 10% 10%, rgba(139,92,246,.15), transparent 40%),
+        radial-gradient(800px 500px at 90% 10%, rgba(34,211,238,.12), transparent 40%),
+        var(--bg);
+      color:white;
+      font-family:"Poppins",system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;
+    }
+    .glass{background: rgba(17,24,39,.7); backdrop-filter: blur(10px); border:1px solid rgba(255,255,255,.06);}
+    .btn{transition: transform .06s ease, box-shadow .2s ease;}
+    .btn:active{transform: translateY(1px) scale(.99);}
+    .gradient-text{background: linear-gradient(90deg, var(--brand), var(--brand-2)); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    .shadow-soft{box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);}
+    .chip{background: rgba(255,255,255,.06); padding:.25rem .5rem; border-radius:999px; font-size:.75rem; color:var(--muted);}
+    .task-card{border:1px solid rgba(255,255,255,.06);}
+    .strike{ text-decoration: line-through; opacity:.6;}
+    .tag-ok{background: rgba(16,185,129,.12); color:#a7f3d0; border:1px solid rgba(16,185,129,.35); }
+    .tag-due{background: rgba(245,158,11,.12); color:#fde68a; border:1px solid rgba(245,158,11,.35); }
+    .tag-id{background: rgba(255,255,255,.06); color:#cbd5e1; border:1px solid rgba(148,163,184,.25); }
+    .card-done{ background: linear-gradient(0deg, rgba(16,185,129,.07), rgba(16,185,129,0) 40%); }
+    .toast{position:fixed; right:1rem; bottom:1rem; z-index:50; display:none}
+    .toast.show{display:block; animation: fadein .2s ease-out}
+    @keyframes fadein{from{opacity:0; transform: translateY(6px)} to{opacity:1; transform: translateY(0)}}
+  </style>
+</head>
+<body>
+  <div class="min-h-screen">
+    <!-- Header -->
+    <header class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
+      <div class="flex items-center justify-between">
+        <h1 class="text-3xl sm:text-4xl font-bold gradient-text">To-Do Pro</h1>
+        <div class="flex items-center gap-2">
+          <span class="chip hidden sm:inline">Flask REST API</span>
+          <span class="chip hidden sm:inline">JSON Persistence</span>
+          <span class="chip">Local-first</span>
+        </div>
+      </div>
+      <p class="text-sm text-slate-300 mt-2">A sleek to-do app powered by a clean Flask API. Add tasks, set due dates, mark complete—your data survives restarts via <span class="font-semibold">tasks.json</span>.</p>
+    </header>
+
+    <!-- Add Task -->
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+      <section class="glass shadow-soft rounded-2xl p-5">
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input id="title" type="text" placeholder="Task title..." class="flex-1 px-4 py-3 rounded-xl bg-black/30 border border-white/10 outline-none focus:border-white/30" />
+          <input id="dueDate" type="date" class="px-4 py-3 rounded-xl bg-black/30 border border-white/10 outline-none focus:border-white/30"/>
+          <button id="addBtn" class="btn px-5 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 shadow-soft font-semibold">Add Task</button>
+        </div>
+        <p class="text-xs text-slate-400 mt-2">Tip: Press <kbd class="chip">Enter</kbd> while typing to add quickly.</p>
+      </section>
+
+      <!-- Filters / Stats (optional enhancements kept simple) -->
+      <section class="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-300">
+        <span class="chip">All Tasks</span>
+        <span class="chip" id="countTotal">0 total</span>
+        <span class="chip" id="countOpen">0 open</span>
+        <span class="chip" id="countDone">0 done</span>
+      </section>
+
+      <!-- Task List -->
+      <section class="mt-6 grid gap-3" id="taskList"></section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-slate-400 text-sm">
+      Built with ❤️ using Flask. API base: <span class="chip">/tasks</span>.
+    </footer>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast glass rounded-xl px-4 py-3 text-sm text-slate-200 shadow-soft"></div>
+
+  <script>
+    // =========================
+    // Config & Elements
+    // =========================
+    const API_BASE = ""; // same origin
+    const listEl   = document.getElementById("taskList");
+    const inputEl  = document.getElementById("title");
+    const dateEl   = document.getElementById("dueDate");
+    const addBtn   = document.getElementById("addBtn");
+    const toastEl  = document.getElementById("toast");
+    const countTotal = document.getElementById("countTotal");
+    const countOpen  = document.getElementById("countOpen");
+    const countDone  = document.getElementById("countDone");
+
+    // =========================
+    // Helpers
+    // =========================
+    function showToast(msg){
+      toastEl.textContent = msg;
+      toastEl.className = "toast glass rounded-xl px-4 py-3 text-sm text-slate-200 shadow-soft show";
+      setTimeout(()=> toastEl.className = "toast glass rounded-xl px-4 py-3 text-sm text-slate-200 shadow-soft", 1600);
+    }
+
+    function fmtDate(d){
+      if(!d) return "";
+      try {
+        const date = new Date(d);
+        // Keep YYYY-MM-DD if it's already that; else show locale
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+        return date.toLocaleDateString();
+      } catch(e){ return d; }
+    }
+
+    function stats(tasks){
+      const total = tasks.length;
+      const done  = tasks.filter(t => t.completed).length;
+      const open  = total - done;
+      countTotal.textContent = `${total} total`;
+      countOpen.textContent  = `${open} open`;
+      countDone.textContent  = `${done} done`;
+    }
+
+    // =========================
+    // API calls
+    // =========================
+    async function fetchTasks(){
+      const res = await fetch(`${API_BASE}/tasks`);
+      if(!res.ok){ listEl.innerHTML = `<div class="text-red-300">Failed to load tasks.</div>`; return; }
+      const data = await res.json();
+      renderTasks(data);
+      stats(data);
+    }
+
+    async function createTask(title, due_date){
+      const res = await fetch(`${API_BASE}/tasks`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ title, due_date })
+      });
+      if(!res.ok){
+        const err = await safeJson(res);
+        throw new Error(err?.message || "Failed to add task");
+      }
+      return res.json();
+    }
+
+    async function updateTask(id, body){
+      const res = await fetch(`${API_BASE}/tasks/${id}`, {
+        method: "PUT",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(body)
+      });
+      if(!res.ok){
+        const err = await safeJson(res);
+        throw new Error(err?.message || "Failed to update task");
+      }
+      return res.json();
+    }
+
+    async function deleteTask(id){
+      const res = await fetch(`${API_BASE}/tasks/${id}`, { method: "DELETE" });
+      if(res.status !== 204){
+        const err = await safeJson(res);
+        throw new Error(err?.message || "Failed to delete");
+      }
+    }
+
+    async function safeJson(res){
+      try{ return await res.json(); } catch{ return null; }
+    }
+
+    // =========================
+    // Render
+    // =========================
+    function pill(text, cls=""){
+      return `<span class="chip ${cls}">${text}</span>`;
+    }
+
+    function taskCard(t){
+      const done = t.completed;
+      const strikeCls = done ? "strike" : "";
+      const cardDone  = done ? "card-done" : "";
+      const due = t.due_date ? pill(`Due: ${fmtDate(t.due_date)}`, "tag-due") : "";
+      const statusPill = done ? pill("Completed", "tag-ok") : "";
+      return `
+        <div class="glass task-card ${cardDone} rounded-xl p-4 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <input type="checkbox" ${done ? "checked" : ""} class="size-5 rounded accent-emerald-500"
+                   data-id="${t.id}" data-role="toggle" aria-label="Toggle complete"/>
+            <div>
+              <div class="font-semibold ${strikeCls}">${escapeHtml(t.title)}</div>
+              <div class="text-xs text-slate-400 flex flex-wrap gap-2 mt-1 items-center">
+                ${due}
+                ${statusPill}
+                ${pill("#"+t.id, "tag-id")}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="btn px-3 py-2 rounded-lg bg-cyan-500/90 hover:bg-cyan-400/90"
+                    data-role="edit" data-id="${t.id}">Edit</button>
+            <button class="btn px-3 py-2 rounded-lg bg-red-500/90 hover:bg-red-400/90"
+                    data-role="delete" data-id="${t.id}">Delete</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTasks(tasks){
+      if(!tasks.length){
+        listEl.innerHTML = `<div class="text-slate-400 text-center py-10">No tasks yet. Add your first task above!</div>`;
+        return;
+      }
+      listEl.innerHTML = tasks.map(taskCard).join("");
+    }
+
+    // Escape for safety (basic)
+    function escapeHtml(s){
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // =========================
+    // UI Handlers
+    // =========================
+    async function onAdd(){
+      const title = inputEl.value.trim();
+      if(!title){ showToast("Enter a task title"); return; }
+      const due_date = dateEl.value || null;
+      try{
+        await createTask(title, due_date);
+        inputEl.value = "";
+        dateEl.value  = "";
+        showToast("Task added");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    // Old function name (from your sample) kept for compatibility:
+    async function toggleCompleted(id, value){
+      return toggleStatus(id, value);
+    }
+
+    // New canonical toggle function (PUT /tasks/:id { completed })
+    async function toggleStatus(id, isChecked){
+      try{
+        await updateTask(id, { completed: !!isChecked });
+        showToast(isChecked ? "Marked completed" : "Marked pending");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    async function onEdit(id){
+      try{
+        // Fetch current to prefill prompts
+        const res = await fetch(`${API_BASE}/tasks/${id}`);
+        if(!res.ok){ showToast("Failed to load task"); return; }
+        const task = await res.json();
+
+        const newTitle = prompt("Edit title:", task.title ?? "");
+        if(newTitle === null) return;
+
+        const newDue = prompt("Edit due date (YYYY-MM-DD) or blank to clear:", task.due_date ?? "");
+        const body = { title: newTitle.trim() };
+        if(newDue !== null) body.due_date = (newDue.trim() || null);
+
+        await updateTask(id, body);
+        showToast("Task updated");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    async function onDelete(id){
+      if(!confirm("Delete this task?")) return;
+      try{
+        await deleteTask(id);
+        showToast("Task deleted");
+        fetchTasks();
+      }catch(e){ showToast(e.message); }
+    }
+
+    // =========================
+    // Wire up events
+    // =========================
+    addBtn.addEventListener("click", onAdd);
+    inputEl.addEventListener("keydown", (e)=>{ if(e.key === "Enter") onAdd(); });
+
+    // Delegated clicks (Edit/Delete)
+    listEl.addEventListener("click", (e)=>{
+      const t = e.target;
+      const role = t.getAttribute("data-role");
+      const id = t.getAttribute("data-id");
+      if(!role || !id) return;
+      if(role === "delete") onDelete(id);
+      if(role === "edit") onEdit(id);
+    });
+
+    // Delegated change (Toggle checkbox)
+    listEl.addEventListener("change", (e)=>{
+      const t = e.target;
+      if(t.getAttribute("data-role") === "toggle"){
+        const id = t.getAttribute("data-id");
+        toggleStatus(id, t.checked);
+      }
+    });
+
+    // Initial load
+    fetchTasks();
+  </script>
+</body>
+</html>

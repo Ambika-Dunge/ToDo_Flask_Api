@@ -1,0 +1,133 @@
+{
+  "info": {
+    "name": "ToDoPro",
+    "_postman_id": "c2d5a1c3-1f6b-4a9a-9c1a-000000000001",
+    "description": "To\u2011Do Pro Flask API collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create Task",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"title\": \"Finish Flask project\", \"due_date\": \"2025-08-31\"}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:5000/tasks",
+          "protocol": "http",
+          "host": [
+            "127",
+            "0",
+            "0",
+            "1"
+          ],
+          "port": "5000",
+          "path": [
+            "tasks"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get All Tasks",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://127.0.0.1:5000/tasks",
+          "protocol": "http",
+          "host": [
+            "127",
+            "0",
+            "0",
+            "1"
+          ],
+          "port": "5000",
+          "path": [
+            "tasks"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Task by ID",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://127.0.0.1:5000/tasks/1",
+          "protocol": "http",
+          "host": [
+            "127",
+            "0",
+            "0",
+            "1"
+          ],
+          "port": "5000",
+          "path": [
+            "tasks",
+            "1"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Task",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"title\": \"Finish Flask project (v2)\", \"due_date\": \"2025-09-05\", \"completed\": true}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:5000/tasks/1",
+          "protocol": "http",
+          "host": [
+            "127",
+            "0",
+            "0",
+            "1"
+          ],
+          "port": "5000",
+          "path": [
+            "tasks",
+            "1"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Delete Task",
+      "request": {
+        "method": "DELETE",
+        "url": {
+          "raw": "http://127.0.0.1:5000/tasks/1",
+          "protocol": "http",
+          "host": [
+            "127",
+            "0",
+            "0",
+            "1"
+          ],
+          "port": "5000",
+          "path": [
+            "tasks",
+            "1"
+          ]
+        }
+      }
+    }
+  ]
+}
